@@ -1,71 +1,46 @@
-# Streaming Data Analysis
+Resumen del Análisis de Datos en Streaming
+==========================================
 
-## Introduction
+Introducción: El Problema de los Logs
+-------------------------------------
 
-You are working on a system that aggregates logs from multiple microservices. For each log is registered as an event containing the following information:
+Estamos trabajando con un sistema que gestiona **logs de microservicios** generados como eventos JSON. La información clave es el **nombre del servicio**, la **marca de tiempo** (timestamp) y un **mensaje**. El estándar crucial es la **detección de errores**, identificada por la cadena "HTTP Status Code: XXX" donde XXX **no es** 200.
 
-* The service name
-* The timestamp when it occurred
-* An *almost* arbitrary message about what happened.
+🎯 Task 1 & 2: Estadísticas a lo Largo del Tiempo
+-------------------------------------------------
 
-In principle, the message can be arbitrary, the developer picks the message they want to log at anytime to help them debug. However, logging the status code of the response of any microservice is standarized so that they all look like HTTP Status Code: XXX. This way you can easily compare different services and see which one has more errors.
+Estas tareas se centran en cómo calcular métricas sobre un conjunto de datos que nunca se detiene (ever growing dataset).
 
-The data source for the task is going to be a directory in which JSON files are stored. Each JSON file looks like:
+### Task 1: Promedios Móviles (_Running Averages_)
 
-```json
-{"service": "monitoring", "timestamp": 1745319168.057018, "message": "HTTP Status Code: 200"}
-```
+**Concepto ClaveInsight PrincipalCálculo Simple**La forma más sencilla de calcular estadísticas sobre un _stream_ sin límite.**Fórmula (Estado)**Se basa en el principio de **mantener dos contadores** en memoria de forma persistente: la **suma acumulada** ($\\sum x\_i$) y el **conteo total** ($n$).**Objetivo**Implementar un algoritmo que calcule el **promedio de peticiones exitosas por servicio** hasta el momento actual ($t$).**Limitación**Es una estadística **global** que nunca olvida el pasado, por lo que los datos muy viejos tienen el mismo peso que los datos recientes.
 
-## Task 1: Running Averages
+### Task 2: Ventanas Deslizantes (_Sliding Windows_)
 
-This is the simplest way to compute statistics overan ever growing dataset. You need to figure out a way to compute statistics about your data by delaying the execution of formulas that require information about a dataset. Recall that the formular for computing an average is:
+**Concepto ClaveInsight PrincipalCálculo Temporal**Permite obtener estadísticas relevantes sobre un **período fijo de tiempo** (ej., los últimos 60 segundos).**Mecanismo (Poda)**Se requiere un algoritmo de **poda (**_**pruning**_**)** que haga dos cosas en cada paso: **1.** Ingresar nuevos registros y **2.** **Eliminar de la memoria** los registros que han quedado fuera de la ventana.**Ventaja**La memoria consumida está **limitada por el tamaño de la ventana** (ej. 1 minuto), no por el tamaño total del _dataset_.**Objetivo**Implementar un algoritmo para calcular el **promedio de peticiones fallidas** en la **última minute**.
 
-$$
-\bar{x} = \frac{1}{n} \sum_{i=1}^{n} x_i
-$$
+🎲 Task 3 & 4: Muestreo y Filtrado Eficiente
+--------------------------------------------
 
-Where $n$ is the number of elements in the dataset and $x_i$ is the $i$-th element in the dataset. Now, you could keep two counters, one for the number of elements and one for the sum of the elements. Then, you could compute the average by dividing the sum by the number of elements at that point in time, the formula would be like:
+Estas tareas abordan la dificultad de tomar decisiones sobre datos sin tener el conjunto completo disponible o sin gastar demasiada memoria.
 
-$$
-\bar{x}_t = \frac{1}{n_t} \sum_{i=1}^{n_t} x_i
-$$
+### Task 3: Muestreo (_Sampling_) y _Reservoir Sampling_
 
-It is important to highlight that you compute statistics up to a point with this method.
+**Concepto ClaveInsight PrincipalMuestreo Justo**Cuando trabajas con un _stream_ infinito, no puedes esperar a que terminen los datos para tomar una muestra representativa.**Reservoir Sampling**Este algoritmo garantiza que cada elemento del _stream_ (pasado y presente) tenga la **misma probabilidad** de ser seleccionado para la muestra final, sin conocer el tamaño total del _stream_ ($N$) de antemano.**Objetivo**Utilizar _Reservoir Sampling_ para determinar el **código de estado HTTP más común** en todo el conjunto de datos.
 
-For this task you need to implement an algorithm that allows you to compute the average number of successful requests per service.
+### Task 4: Filtrado y _Bloom Filter_
 
+**Concepto ClaveInsight PrincipalFiltrado Rápido**Necesitamos decidir si un mensaje entrante (en el _stream_) es de interés _sin_ tener que cargar una lista gigante de mensajes deseados en la memoria.**Bloom Filter**Una estructura de datos **probabilística** y **altamente eficiente en memoria** para determinar si un elemento **probablemente pertenece** a un conjunto o **definitivamente no pertenece** a él.**Objetivo**Usar el _Bloom Filter_ para determinar si un mensaje debe ser reenviado a otro sistema, basado en una lista de mensajes de interés que **es demasiado grande para caber en memoria**.
 
-## Task 2: Sliding Windows
+📈 Task 5 & 6: Frameworks de _Big Data_
+---------------------------------------
 
-There are some statistics that are relevant over a certain period of time. For example, you might want to compute the average number of unsuccessful requests over the last 10 minutes. To do this, you can use a sliding window: keep track of records over a fixed period of time and compute the statistics over those records that you allow yourself to keep in memory.
+Estas tareas abordan cómo los _frameworks_ modernos de _Big Data_ resuelven los problemas de las Tareas 1 y 2 de forma nativa y a gran escala.
 
-Implement an sliding window algorithm that allows you to compute the average number of unsuccessful requests over the last minute.
+### Task 5: Polars Streaming (Procesamiento en una Sola Máquina)
 
+**Concepto ClaveInsight PrincipalMotor LazyFrame**Polars utiliza el **LazyFrame** para definir un plan de ejecución **sin cargar los datos**.**Modo Streaming**Al ejecutar con **.collect(streaming=True)**, Polars procesa archivos grandes en **lotes (**_**chunks**_**)** y libera la memoria de los grupos terminados.**Estadísticas Clave**Ideal para métricas de una sola máquina con **uso limitado de memoria**, como: **Tasa de Fallos por Servicio** (group\_by("service").agg(pl.mean())) o **Media Móvil** (rolling\_mean()).
 
-## Task 3: Sampling
+### Task 6: Spark Streaming (Procesamiento Distribuido)
 
-There are situations in which we need to take samples of the data to be able to compute any statistic. However, when working with streaming data, you need to keep into account that the full set of elements for which you want to compute statistics is not available. Let's say you want need a sample and you want to make sure that the sample is representative of the full dataset; how do you ensure that the samples are chosen in a truly random way?
-
-Your task now is to implement the Reservoir Sampling algorithm to figure out *the most commong HTTP Status Code in the dataset*. Here is another reference: https://medium.com/pythoneers/dipping-into-data-streams-the-magic-of-reservoir-sampling-762f41b78781
-
-
-## Task 4: Filtering
-
-Our system is connected to a lot of services, all of them generating a lot of logs. However, there are some type of messages in the logs, for which we are specially interested. Those messages for which we are interested, should be sent to another system (e.g. a database).
-
-Let's say we have a list of messages that we are interested in and they are stored in a file, but the file is too big to fit in memmory. Use the [Bloom Filter](https://en.wikipedia.org/wiki/Bloom_filter) technique to decide whether those messages should be forwarded to antoher system or not.
-
-## Task 5: Polars Streaming
-
-Polars can handle streaming data by using the LazyFrame interface. Read its documentation and propose some statistics that you can compute with its API. Feel free to decide which set of statistics are interesting to compute with this approach and explain why you chose those. References:
-
-* https://docs.pola.rs/user-guide/concepts/streaming/ 
-* https://urbandataengineer.substack.com/p/big-data-small-machine-the-magic/
-* https://www.rhosignal.com/posts/streaming-in-polars/
-* https://www.rhosignal.com/posts/streaming-operations-in-polars/ 
-
-## Task 6: Spark Streaming
-
-Spark can handle streaming data by using the Structured Streaming API. Read its documentation and propose some statistics that you can compute with its API. Feel free to decide which set of statistics are interesting to compute with this approach and explain why you chose those. References:
-* https://spark.apache.org/docs/latest/streaming-programming-guide.html
-* https://spark.apache.org/docs/latest/streaming/getting-started.html 
+**Concepto ClaveInsight PrincipalEstructura Distribuida**Spark utiliza **Structured Streaming** sobre un clúster de máquinas (varios nodos de EC2, por ejemplo) para escalar el procesamiento de _streaming_ horizontalmente.**Operaciones con Estado**Maneja el estado de la ventana o la agregación **distribuyéndolo** entre los nodos del clúster.**Estadísticas Clave**Utilizado para los mismos tipos de métricas (ventanas, agregaciones), pero diseñado para volúmenes de datos que **superan la capacidad de una sola máquina**.
